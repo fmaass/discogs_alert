@@ -126,8 +126,11 @@ class AnonClient(Client):
         try:
             page.goto(
                 f"{self._base_url_non_api}/sell/release/{release_id}?ev=rb&sort=price%2Casc",
-                wait_until="domcontentloaded",
+                wait_until="networkidle",
+                timeout=30000,
             )
+            # Wait for the actual marketplace content to appear (Cloudflare may challenge first)
+            page.wait_for_selector("table.mpitems", timeout=15000)
             html = page.content()
         finally:
             page.close()

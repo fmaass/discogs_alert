@@ -75,6 +75,13 @@ def loop(
             if user_token_client.rate_limit_remaining == 1:
                 time.sleep(60)
 
+            # lightweight API check: skip scraping if nothing is for sale
+            stats = user_token_client.get_release_stats(release.id)
+            if stats and stats.num_for_sale == 0:
+                if verbose:
+                    logger.info(f"No listings for sale: {release.display_title} — skipping scrape")
+                continue
+
             for listing in client_anon.get_marketplace_listings(release.id):
                 try:
                     listing = listing.convert_currency(currency)  # convert —> the base currency

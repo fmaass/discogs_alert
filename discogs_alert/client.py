@@ -110,7 +110,15 @@ class AnonClient(Client):
             self._browser = self._playwright.chromium.connect_over_cdp(cdp_endpoint)
         else:
             logger.info("Launching bundled Chromium via Playwright")
-            self._browser = self._playwright.chromium.launch(headless=True)
+            self._browser = self._playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--disable-infobars",
+                    "--no-sandbox",
+                ],
+            )
 
     def close(self):
         if self._browser:

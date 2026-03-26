@@ -8,6 +8,5 @@ wantlist.json
 TODO
 dist
 nohup.out
-poetry.lock
 .tox
 

@@ -143,7 +143,5 @@ def loop(
 
     logger.info(f"\t took {time.time() - start_time}")
 
-    # clean up Chrome clients
     if client_anon is not None:
-        client_anon.driver.close()
-        client_anon.driver.quit()
+        client_anon.close()

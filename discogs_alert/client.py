@@ -91,8 +91,9 @@ class UserTokenClient(Client):
 class AnonClient(Client):
     """A Client for anonymous scraping requests (when not using the Discogs API, i.e. for the marketplace).
 
-    Uses Playwright to render marketplace pages. Connects to an external CDP endpoint if DA_CDP_ENDPOINT
-    is set (e.g. Lightpanda, remote Chrome), otherwise launches Playwright's bundled Chromium.
+    Uses Playwright to render marketplace pages. Launches headless Firefox by default
+    (Chromium gets blocked by Cloudflare's bot detection). Can connect to an external
+    CDP endpoint via DA_CDP_ENDPOINT for Chromium-based browsers if needed.
     """
 
     def __init__(self, user_agent: str, *args, **kwargs):
@@ -109,16 +110,8 @@ class AnonClient(Client):
             logger.info(f"Connecting to external CDP endpoint: {cdp_endpoint}")
             self._browser = self._playwright.chromium.connect_over_cdp(cdp_endpoint)
         else:
-            logger.info("Launching bundled Chromium via Playwright")
-            self._browser = self._playwright.chromium.launch(
-                headless=True,
-                args=[
-                    "--disable-gpu",
-                    "--disable-dev-shm-usage",
-                    "--disable-infobars",
-                    "--no-sandbox",
-                ],
-            )
+            logger.info("Launching headless Firefox via Playwright")
+            self._browser = self._playwright.firefox.launch(headless=True)
 
     def close(self):
         if self._browser:

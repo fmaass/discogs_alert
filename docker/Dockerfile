@@ -32,7 +32,7 @@ RUN . /venv/bin/activate && pip install *.whl
 
 ARG INSTALL_BROWSER=true
 RUN if [ "$INSTALL_BROWSER" = "true" ]; then \
-        . /venv/bin/activate && playwright install --with-deps chromium; \
+        . /venv/bin/activate && playwright install --with-deps firefox; \
     fi
 
 ENV DA_CURRENCY_CACHE_DIR=/.currency_cache

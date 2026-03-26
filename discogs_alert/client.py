@@ -1,36 +1,14 @@
-# ruff: noqa: E402
-import os
-
-# to prevent the webdriver manager from polluting logs
-os.environ["WDM_LOG"] = "0"
-
 import json
 import logging
-import subprocess
-import sys
-from typing import Union
+import os
+from typing import Optional, Union
 
-import psutil
 import requests
-from fake_useragent import UserAgent
-from selenium import webdriver
-from selenium.common.exceptions import WebDriverException
-from selenium.webdriver.chrome.service import Service as ChromiumService
-from selenium.webdriver.chromium.options import ChromiumOptions
-from webdriver_manager.chrome import ChromeDriverManager
+from playwright.sync_api import Browser, Playwright, sync_playwright
 
 from discogs_alert import entities as da_entities, scrape as da_scrape
 
 logger = logging.getLogger(__name__)
-
-
-def kill_chromedriver_processes():
-    for process in psutil.process_iter(["pid", "name", "cmdline"]):
-        pinfo = process.info
-        if pinfo["name"] == "chromedriver" or (pinfo["cmdline"] is not None and "chromedriver" in pinfo["cmdline"]):
-            if process.status() != "zombie":
-                print(f"Terminating chromedriver process (PID {pinfo['pid']})")
-                process.terminate()
 
 
 class Client:
@@ -111,59 +89,46 @@ class UserTokenClient(Client):
 
 
 class AnonClient(Client):
-    """A Client for anonymous scraping requests (when not using the Discogs API, i.e. for the marketplace)."""
+    """A Client for anonymous scraping requests (when not using the Discogs API, i.e. for the marketplace).
+
+    Uses Playwright to render marketplace pages. Connects to an external CDP endpoint if DA_CDP_ENDPOINT
+    is set (e.g. Lightpanda, remote Chrome), otherwise launches Playwright's bundled Chromium.
+    """
 
     def __init__(self, user_agent: str, *args, **kwargs):
         super().__init__(user_agent, *args, **kwargs)
+        self._playwright: Optional[Playwright] = None
+        self._browser: Optional[Browser] = None
+        self._connect()
 
-        self.user_agent = UserAgent()  # can pull up-to-date user agents from any modern browser
+    def _connect(self):
+        self._playwright = sync_playwright().start()
+        cdp_endpoint = os.getenv("DA_CDP_ENDPOINT")
 
-        log_path = "/dev/null" if sys.platform in {"linux", "linux2", "darwin"} else "NUL"  # disable logs
-        service = ChromiumService(self.get_driver_path(), log_path=log_path)
-        options = ChromiumOptions()
-        options_arguments = [
-            "--disable-gpu",
-            "--disable-dev-shm-usage",
-            "--disable-infobars",
-            "--headless",
-            "--incognito",
-            f"--user-agent={self.user_agent.random}",  # initialize with random user-agent
-        ]
-        if os.getenv("IN_DA_DOCKER") == "true":
-            options_arguments.append("--no-sandbox")
-        for argument in options_arguments:
-            options.add_argument(argument)
-
-        # If we get an exception because some previous chromedriver instance is still running, we kill it
-        try:
-            self.driver = webdriver.Chrome(service=service, options=options)
-        except WebDriverException as we:
-            kill_chromedriver_processes()
-            raise we("We have killed the running chromedriver processes; DA should work next time it is called.")
-
-    @staticmethod
-    def find_chromedriver_path() -> str:
-        if os.name == "posix":  # macOS and Linux
-            return subprocess.check_output(["which", "chromedriver"]).decode().strip()
-        elif os.name == "nt":  # Windows
-            for path in os.environ["PATH"].split(os.pathsep):
-                chromedriver_path = os.path.join(path, "chromedriver.exe")
-                if os.path.exists(chromedriver_path):
-                    return chromedriver_path
+        if cdp_endpoint:
+            logger.info(f"Connecting to external CDP endpoint: {cdp_endpoint}")
+            self._browser = self._playwright.chromium.connect_over_cdp(cdp_endpoint)
         else:
-            raise NotImplementedError("Unsupported operating system")
+            logger.info("Launching bundled Chromium via Playwright")
+            self._browser = self._playwright.chromium.launch(headless=True)
 
-    def get_driver_path(self):
-        try:
-            # to install both chromium binary and the matching chromedriver binary:
-            # apt-get install chromium-driver
-            return self.find_chromedriver_path()
-        except subprocess.CalledProcessError:
-            # will install latest chromedriver binary regardless of currently installed chromium version
-            return ChromeDriverManager().install()
+    def close(self):
+        if self._browser:
+            self._browser.close()
+            self._browser = None
+        if self._playwright:
+            self._playwright.stop()
+            self._playwright = None
 
     def get_marketplace_listings(self, release_id: int) -> da_entities.Listings:
         """Get list of listings currently for sale for particular release (by release's discogs ID)"""
-
-        self.driver.get(f"{self._base_url_non_api}/sell/release/{release_id}?ev=rb&sort=price%2Casc")
-        return da_scrape.scrape_listings_from_marketplace(self.driver.page_source, release_id)
+        page = self._browser.new_page()
+        try:
+            page.goto(
+                f"{self._base_url_non_api}/sell/release/{release_id}?ev=rb&sort=price%2Casc",
+                wait_until="domcontentloaded",
+            )
+            html = page.content()
+        finally:
+            page.close()
+        return da_scrape.scrape_listings_from_marketplace(html, release_id)

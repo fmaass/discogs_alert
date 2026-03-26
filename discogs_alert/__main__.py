@@ -186,6 +186,14 @@ logger = logging.getLogger(__name__)
     help="chat ID for telegram bot notification service.",
 )
 @click.option(
+    "-asp",
+    "--alert-state-path",
+    default=None,
+    type=click.Path(),
+    envvar="DA_ALERT_STATE_PATH",
+    help="path to JSON file for tracking sent alerts (enables dedup for Telegram)",
+)
+@click.option(
     "-V", "--verbose", default=False, is_flag=True, help="use flag if you want to see logs as the program runs"
 )
 @click.option(
@@ -216,6 +224,7 @@ def main(
     pushbullet_token,
     telegram_token,
     telegram_chat_id,
+    alert_state_path,
     verbose,
     test,
 ):
@@ -234,7 +243,11 @@ def main(
     if alerter_type == da_alert.AlerterType.PUSHBULLET:
         alerter_kwargs = {"pushbullet_token": pushbullet_token}
     elif alerter_type == da_alert.AlerterType.TELEGRAM:
-        alerter_kwargs = {"telegram_token": telegram_token, "telegram_chat_id": telegram_chat_id}
+        alerter_kwargs = {
+            "telegram_token": telegram_token,
+            "telegram_chat_id": telegram_chat_id,
+            "alert_state_path": alert_state_path,
+        }
     else:
         raise ValueError("We should never get here")
 
